@@ -11,7 +11,7 @@
  * a gradient search for a minimum in mc-space by using thread.
  * 
  * To compile:
- *   cc -o lr_coursework_multi-thread lr_coursework_multi-thread.c -lm -pthread
+ *   cc -o lr_coursework_multi-thread 'lr_coursework _multi-thread.c' -lm -pthread
  * 
  * To run:
  *   ./lr_coursework_multi-thread
@@ -109,8 +109,8 @@ int main() {
       }
     
 
-    printf("best m,c is %lf,%lf with error %lf in direction %d\n", 
-      dm[best_error_i], dc[best_error_i], best_error, best_error_i);
+    /*printf("best m,c is %lf,%lf with error %lf in direction %d\n", 
+      dm[best_error_i], dc[best_error_i], best_error, best_error_i);*/
     if(best_error < be) {
       be = best_error;
       bm = dm[best_error_i];

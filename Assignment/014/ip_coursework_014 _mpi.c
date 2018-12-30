@@ -5,7 +5,7 @@
 #include <GL/gl.h>
 #include <malloc.h>
 #include <signal.h>
-#include <pthread.h>
+#include <mpi.h>
 /******************************************************************************
   Displays two grey scale images. On the left is an image that has come from an 
   image processing pipeline, just after colour thresholding. On the right is 
@@ -21,9 +21,10 @@
       the pixel data type.
     
   To compile adapt the code below wo match your filenames:  
-    cc -o ip_coursework_multi_thread_014 ip_coursework_multi_thread_014.c -lglut -lGL -lm -pthread
-  To run this program:
-   ./ip_coursework_multi_thread_014
+    mpicc -o ip_coursework_014_mpi 'ip_coursework_014 _mpi.c' -lglut -lGL -lm 
+
+ To run the program:
+ mpiexec -n 4 ./ip_coursework_014_mpi
    
   Dr Kevan Buckley, University of Wolverhampton, 2018
 ******************************************************************************/
@@ -31,62 +32,20 @@
 #define height 72
 
 unsigned char image[], results[width * height];
-typedef struct arguments_t {
-  int start;
-  int stride;
-  unsigned char *input;
-  unsigned char *output;
-} arguments_t;
+int startIndex, endIndex;
+int time_difference(struct timespec *start, struct timespec *finish, 
+                    long long int *difference);
+void detect_edges(unsigned char *in, unsigned char *out);
+static void key_pressed(unsigned char key,int x, int y);
+void sigint_callback(int signal_number);
+static void display();
+void tidy_and_exit();
 
-void edge_detect(unsigned char *image,unsigned char *results) {
-  pthread_t th1, th2, th3, th4;
-
-  arguments_t t1_arguments;
-  t1_arguments.start = 0;
-  t1_arguments.stride = 4;
-  t1_arguments.input=image;
-  t1_arguments.output=results;
-
-  arguments_t t2_arguments;
-  t2_arguments.start = 1;
-  t2_arguments.stride = 4;
-  t2_arguments.input=image;
-  t2_arguments.output=results;
-
-  arguments_t t3_arguments;
-  t3_arguments.start = 2;
-  t3_arguments.stride = 4;
-  t3_arguments.input=image;
-  t3_arguments.output=results;
-
-  arguments_t t4_arguments;
-  t4_arguments.start = 3;
-  t4_arguments.stride = 4;
-  t4_arguments.input=image;
-  t4_arguments.output=results;
-
-  void *detect_image_edges();
-  
-  pthread_create(&th1, NULL, detect_image_edges, &t1_arguments);
-  pthread_create(&th2, NULL, detect_image_edges, &t2_arguments);
-  pthread_create(&th3, NULL, detect_image_edges, &t3_arguments);
-  pthread_create(&th4, NULL, detect_image_edges, &t4_arguments);
-
-  pthread_join(th1, NULL);
-  pthread_join(th2, NULL);
-  pthread_join(th3, NULL);
-  pthread_join(th4, NULL);
-}
-
- 
-
-void *detect_image_edges(arguments_t *args) {
+ void detect_edges(unsigned char *in, unsigned char *out) {
   int i;
   int n_pixels = width * height;
-  unsigned char *in=args->input;
-  unsigned char *out=args->output;
 
-  for(i=args->start;i<n_pixels;i+=args->stride){
+  for(i=0;i<n_pixels;i++) {
     int x, y; // the pixel of interest
     int b, d, f, h; // the pixels adjacent to x,y used for the calculation
     int r; // the result of calculate
@@ -113,7 +72,6 @@ void *detect_image_edges(arguments_t *args) {
     }
   }
 }
-
 
 void tidy_and_exit() {
   exit(0);
@@ -144,7 +102,7 @@ static void key_pressed(unsigned char key, int x, int y) {
   }
 }
 
-int time_difference(struct timespec *start, struct timespec *finish, 
+ int time_difference(struct timespec *start, struct timespec *finish, 
                     long long int *difference) {
   long long int ds =  finish->tv_sec - start->tv_sec; 
   long long int dn =  finish->tv_nsec - start->tv_nsec; 
@@ -161,14 +119,35 @@ int main(int argc, char **argv) {
   signal(SIGINT, sigint_callback);
  
   printf("image dimensions %dx%d\n", width, height);
-  //detect_edges(image, results);
+
+  int size,rank;
+  MPI_Init(NULL,NULL);
+  MPI_Comm_size(MPI_COMM_WORLD,&size);
+  MPI_Comm_rank(MPI_COMM_WORLD,&rank);
+
+  if (size !=4){
+  printf("This program needs exactly 4 instances.\n");
+  exit(-1);
+
+
+}
+
+
+ if(rank == 0){
+ startIndex = 0;
+ endIndex=1799;
 
   struct timespec start, finish;   
   long long int time_elapsed;
 
   clock_gettime(CLOCK_MONOTONIC, &start);
 
-  edge_detect(image, results);
+  detect_edges(image, results);
+
+  //results, receive
+  MPI_Recv(&results[1800],1800, MPI_UNSIGNED_CHAR,1,0,MPI_COMM_WORLD,MPI_STATUS_IGNORE);
+  MPI_Recv(&results[3600],1800, MPI_UNSIGNED_CHAR,2,0,MPI_COMM_WORLD,MPI_STATUS_IGNORE);
+  MPI_Recv(&results[5400],1800, MPI_UNSIGNED_CHAR,3,0,MPI_COMM_WORLD,MPI_STATUS_IGNORE);
 
   clock_gettime(CLOCK_MONOTONIC, &finish);
   time_difference(&start, &finish, &time_elapsed);
@@ -183,12 +162,35 @@ int main(int argc, char **argv) {
   glutDisplayFunc(display);
   glutKeyboardFunc(key_pressed);
   glClearColor(0.0, 1.0, 0.0, 1.0); 
-  
-  
 
   glutMainLoop(); 
 
   tidy_and_exit();
+
+ }else if(rank==1) {
+ 	startIndex = 1800;
+ 	endIndex = 3599;
+ 	detect_edges(image, results);
+ 	MPI_Send(&results[1800], 1800, MPI_UNSIGNED_CHAR, 0, 0, MPI_COMM_WORLD);
+
+ }
+ else if(rank==2) {
+ 	startIndex = 3600;
+ 	endIndex = 5399;
+ 	detect_edges(image, results);
+ 	MPI_Send(&results[3600], 1800, MPI_UNSIGNED_CHAR, 0, 0, MPI_COMM_WORLD);
+ 	
+ }
+ else if(rank==3) {
+ 	startIndex = 5400;
+ 	endIndex = 7199;
+ 	detect_edges(image, results);
+ 	MPI_Send(&results[5400], 1800, MPI_UNSIGNED_CHAR, 0, 0, MPI_COMM_WORLD);
+ 	
+ }
+ MPI_Finalize();
+  
+  
   
   return 0;
 }
