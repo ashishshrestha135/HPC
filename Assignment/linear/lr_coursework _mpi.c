@@ -1,6 +1,8 @@
 #include <stdio.h>
 #include <math.h>
 #include <time.h>
+#include <mpi.h>
+#include <stdlib.h>
 /******************************************************************************
  * This program takes an initial estimate of m and c and finds the associated 
  * rms error. It is then as a base to generate and evaluate 8 new estimates, 
@@ -10,10 +12,10 @@
  * a gradient search for a minimum in mc-space.
  * 
  * To compile:
- *   cc -o lr_coursework lr_coursework.c -lm
+ *   mpicc -o lr_coursework_mpi 'lr_coursework _mpi.c' -lm
  * 
  * To run:
- *   ./lr_coursework
+ *  mpiexec -n 8 ./lr_coursework_mpi
  * 
  * Dr Kevan Buckley, University of Wolverhampton, 2018
  *****************************************************************************/
@@ -25,6 +27,12 @@ typedef struct point_t {
 
 int n_data = 1000;
 point_t data[];
+
+double residual_error(double x, double y, double m, double c);
+double rms_error(double m, double c) ;
+int time_difference(struct timespec *start, 
+                    struct timespec *finish, 
+                    long long int *difference);
 
 double residual_error(double x, double y, double m, double c) {
   double e = (m * x) + c - y;
@@ -45,7 +53,7 @@ double rms_error(double m, double c) {
   return sqrt(mean);
 }
 
-int time_difference(struct timespec *start, 
+ int time_difference(struct timespec *start, 
                     struct timespec *finish, 
                     long long int *difference) {
   long long int ds =  finish->tv_sec - start->tv_sec; 
@@ -60,7 +68,12 @@ int time_difference(struct timespec *start,
 }
 
 int main() {
-  int i;
+   struct timespec start, finish; 
+   int account = 0;  
+  long long int time_elapsed;
+
+  clock_gettime(CLOCK_MONOTONIC, &start);
+
   double bm = 1.3;
   double bc = 10;
   double be;
@@ -76,28 +89,35 @@ int main() {
   double oc[] = {1,1,0,-1,-1,-1, 0, 1};
 
   be = rms_error(bm, bc);
+  int rank,size;
+  MPI_Init(NULL,NULL);
+  MPI_Comm_size(MPI_COMM_WORLD,&size);
+  MPI_Comm_rank(MPI_COMM_WORLD,&rank);
   
-  struct timespec start, finish;   
-  long long int time_elapsed;
+ 
 
-  clock_gettime(CLOCK_MONOTONIC, &start);
+   if (size !=8){
+  printf("This program needs exactly 8 instances.\n");
+  exit(-1);
+
+
+}
 
   while(!minimum_found) {
-    for(i=0;i<8;i++) {
-      dm[i] = bm + (om[i] * step);
-      dc[i] = bc + (oc[i] * step);    
-    }
+    
+      dm[rank] = bm + (om[rank] * step);
+      dc[rank] = bc + (oc[rank] * step);    
+   
+      e[rank] = rms_error(dm[rank],dc[rank]);
       
-    for(i=0;i<8;i++) {
-      e[i] = rms_error(dm[i], dc[i]);
-      if(e[i] < best_error) {
-        best_error = e[i];
-        best_error_i = i;
+      if(e[rank] < best_error) {
+        best_error = e[rank];
+        best_error_i = rank;
       }
-    }
+    printf("best m,c is %lf,%lf with error %lf in direction %d\n", 
+		dm[best_error_i], dc[best_error_i], best_error, best_error_i);
 
-    /*printf("best m,c is %lf,%lf with error %lf in direction %d\n", 
-      dm[best_error_i], dc[best_error_i], best_error, best_error_i);*/
+    
     if(best_error < be) {
       be = best_error;
       bm = dm[best_error_i];
@@ -105,16 +125,52 @@ int main() {
     } else {
       minimum_found = 1;
     }
+ 
+
   }
 
+  MPI_Barrier(MPI_COMM_WORLD);
 
-  printf("minimum m,c is %lf,%lf with error %lf\n", bm, bc, be);
+  if(rank == 0){
+  double results[24];
+  int final_i;
+  double final_be = be;
+ 
+  results[0] = be;
+  results[1] = bm;
+  results[2] = bc;
+  
+  MPI_Recv(&results[3],3, MPI_UNSIGNED_CHAR,1,0,MPI_COMM_WORLD,MPI_STATUS_IGNORE);
+  MPI_Recv(&results[6],3, MPI_UNSIGNED_CHAR,2,0,MPI_COMM_WORLD,MPI_STATUS_IGNORE);
+  MPI_Recv(&results[9],3, MPI_UNSIGNED_CHAR,3,0,MPI_COMM_WORLD,MPI_STATUS_IGNORE);
+  MPI_Recv(&results[12],3, MPI_UNSIGNED_CHAR,4,0,MPI_COMM_WORLD,MPI_STATUS_IGNORE);
+  MPI_Recv(&results[15],3, MPI_UNSIGNED_CHAR,5,0,MPI_COMM_WORLD,MPI_STATUS_IGNORE);
+  MPI_Recv(&results[18],3, MPI_UNSIGNED_CHAR,6,0,MPI_COMM_WORLD,MPI_STATUS_IGNORE);
+  MPI_Recv(&results[21],3, MPI_UNSIGNED_CHAR,7,0,MPI_COMM_WORLD,MPI_STATUS_IGNORE);
 
-  clock_gettime(CLOCK_MONOTONIC, &finish);
+  for (int i=0; i<=21; i+=3){
+   if(results[i] < final_be){
+      final_be = results[i];
+      final_i = i ;
+
+   }
+
+
+  printf("minimum m,c is %lf,%lf with error %lf\n", results[final_i + 1],
+  results[final_i + 2],results[final_i]);
+  
+  
+}
+ }else{
+      double results[] = {be, bm, bc};
+      MPI_Send(&results, 3, MPI_DOUBLE, 0 ,0, MPI_COMM_WORLD);
+}
+
+ MPI_Finalize();
+clock_gettime(CLOCK_MONOTONIC, &finish);
   time_difference(&start, &finish, &time_elapsed);
   printf("Time elapsed was %lldns or %0.9lfs\n", time_elapsed,
                                          (time_elapsed/1.0e9));
-
   return 0;
 }
 

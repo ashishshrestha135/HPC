@@ -1,9 +1,12 @@
-#include <stdio.h>
-#include <string.h>
-#include <stdlib.h>
-#include <time.h>
-#include <crypt.h>
 
+#include <stdlib.h>
+#include <stdio.h>
+#include <ctype.h>
+#include <sys/stat.h>
+#include <string.h>
+#include <time.h>
+#include <pthread.h>
+#include <crypt.h>
 /***********************************************************************
 *******
   Demonstrates how to crack an encrypted password using a simple
@@ -14,23 +17,24 @@ in the
   code.
 
   Compile with:
-    cc -o CrackAZ99-With-Data CrackAZ99-With-Data.c -lcrypt
+    cc -o CrackAZ99-With-Data-multi-threads CrackAZ99-With-Data-multi-threads.c -lcrypt -pthread
 
   If you want to analyse the results then use the redirection operator
 to send
   output to a file that you can view using an editor or the less
 utility:
 
-    ./CrackAZ99-With-Data > results.txt
+    ./CrackAZ99-With-Data-multi-threads > results.txt
 
   Dr Kevan Buckley, University of Wolverhampton, 2018
 ************************************************************************
 ******/
+
 int n_passwords = 4;
 
 char *encrypted_passwords[] = {
 
- "$6$KB$6SsUGf4Cq7/Oooym9WWQN3VKeo2lynKV9gXVyEG4HvYy1UFRx.XAye89TLp/OTcW7cGpf9UlU0F.cK/S9CfZn1",
+"$6$KB$6SsUGf4Cq7/Oooym9WWQN3VKeo2lynKV9gXVyEG4HvYy1UFRx.XAye89TLp/OTcW7cGpf9UlU0F.cK/S9CfZn1",
 
 "$6$KB$1vCJQRsKAizZvuTjEqLE./zeAqZ7AdqzTdx5Tob.bQDRGlXOEVkNhuqMorBSvCp4fP0eoNm2wULs3DRABbrLQ/",
 
@@ -61,8 +65,26 @@ experiments
 printfs.
 */
 
-void crack(char *salt_and_encrypted){
-  int x, y, z;     // Loop counters
+
+void crack_block() {
+  int i;
+  pthread_t th1, th2;
+
+  void *first_block_crack();
+  void *second_block_crack();
+  
+  for(i=0;i<n_passwords;i<i++) {
+    pthread_create(&th1, NULL, first_block_crack, encrypted_passwords[i] );
+    pthread_create(&th2, NULL, second_block_crack, encrypted_passwords[i]);
+  
+  pthread_join(th1, NULL);
+  pthread_join(th2, NULL);
+}
+}
+
+
+void *first_block_crack(char *salt_and_encrypted){
+ int x, y, z;     // Loop counters
   char salt[7];    // String used in hashing the password. Need space
   char plain[7];   // The combination of letters currently being checked
   char *enc;       // Pointer to the encrypted password
@@ -70,7 +92,7 @@ void crack(char *salt_and_encrypted){
 
   substr(salt, salt_and_encrypted, 0, 6);
 
-  for(x='A'; x<='Z'; x++){
+  for(x='A'; x<='M'; x++){
     for(y='A'; y<='Z'; y++){
        for(z=0; z<=99; z++){
         sprintf(plain, "%c%c%02d", x, y, z);
@@ -84,15 +106,35 @@ void crack(char *salt_and_encrypted){
        }
     }
   }
-  printf("%d solutions explored\n", count);
 }
 
-// Calculate the difference between two times. Returns zero on
-// success and the time difference through an argument. It will 
-// be unsuccessful if the start time is after the end time.
+void *second_block_crack(char *salt_and_encrypted){
+int x, y, z;     // Loop counters
+  char salt[7];    // String used in hashing the password. Need space
+  char plain[7];   // The combination of letters currently being checked
+  char *enc;       // Pointer to the encrypted password
+  int count = 0;   // The number of combinations explored so far
 
- int time_difference(struct timespec *start, 
-                    struct timespec *finish, 
+  substr(salt, salt_and_encrypted, 0, 6);
+
+  for(x='N'; x<='Z'; x++){
+    for(y='A'; y<='Z'; y++){
+       for(z=0; z<=99; z++){
+        sprintf(plain, "%c%c%02d", x, y, z);
+        enc = (char *) crypt(plain, salt);
+        count++;
+        if(strcmp(salt_and_encrypted, enc) == 0){
+          printf("#%-8d%s %s\n", count, plain, enc);
+        } else {
+          printf(" %-8d%s %s\n", count, plain, enc);
+        }
+       }
+    }
+  }
+   printf("%d solutions explored\n", count);
+}
+
+ int time_difference(struct timespec *start, struct timespec *finish,
                     long long int *difference) {
   long long int ds =  finish->tv_sec - start->tv_sec; 
   long long int dn =  finish->tv_nsec - start->tv_nsec; 
@@ -105,25 +147,21 @@ void crack(char *salt_and_encrypted){
   return !(*difference > 0);
 }
 
-int main(int argc, char *argv[]){
-  int i;
+int main(int argc, char *argv[]) {
   struct timespec start, finish;   
   long long int time_elapsed;
 
   clock_gettime(CLOCK_MONOTONIC, &start);
+ 
   
-    for(i=0;i<n_passwords;i<i++) {
-    crack(encrypted_passwords[i]);
-    }
+    crack_block();
+    
+    
   clock_gettime(CLOCK_MONOTONIC, &finish);
   time_difference(&start, &finish, &time_elapsed);
   printf("Time elapsed was %lldns or %0.9lfs or %0.9lfmin\n", time_elapsed,
                                          (time_elapsed/1.0e9),((time_elapsed/1.0e9)/60)); 
 
-  
-
 
   return 0;
 }
-
-

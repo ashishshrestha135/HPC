@@ -1,6 +1,11 @@
 #include <stdio.h>
 #include <math.h>
 #include <time.h>
+#include <cuda_runtime_api.h>
+#include <cuda_runtime.h>
+#include <errno.h>
+#include<malloc.h>
+#include<cuda.h>
 /******************************************************************************
  * This program takes an initial estimate of m and c and finds the associated 
  * rms error. It is then as a base to generate and evaluate 8 new estimates, 
@@ -10,10 +15,10 @@
  * a gradient search for a minimum in mc-space.
  * 
  * To compile:
- *   cc -o lr_coursework lr_coursework.c -lm
+ *   nvcc -o lr_coursework_cuda 'lr_coursework _cuda.cu' -lm
  * 
  * To run:
- *   ./lr_coursework
+ *   ./lr_coursework_cu
  * 
  * Dr Kevan Buckley, University of Wolverhampton, 2018
  *****************************************************************************/
@@ -25,8 +30,30 @@ typedef struct point_t {
 
 int n_data = 1000;
 point_t data[];
+double error_sum[1000] = {0.0};
 
-double residual_error(double x, double y, double m, double c) {
+double error_mean(){
+  int i;
+  double mean, sum=0;
+  for(i=0; i<n_data; i++){
+  sum += error_sum[i];
+}
+
+  mean = sum/n_data;
+  return sqrt(mean);
+}
+
+__global__ void rms_error(double *m, double *c, double *error_sum, point_t *data){
+
+int i = threadIdx.x;
+
+double e=(*m * data[i].x)+ *c - data[i].y;
+error_sum[i] = e*e;
+
+
+
+}
+ /*double residual_error(double x, double y, double m, double c) {
   double e = (m * x) + c - y;
   return e * e;
 }
@@ -44,7 +71,7 @@ double rms_error(double m, double c) {
   
   return sqrt(mean);
 }
-
+*/
 int time_difference(struct timespec *start, 
                     struct timespec *finish, 
                     long long int *difference) {
@@ -60,6 +87,12 @@ int time_difference(struct timespec *start,
 }
 
 int main() {
+  
+  cudaError_t error;
+  struct timespec start, finish;   
+  long long int time_elapsed;
+  clock_gettime(CLOCK_MONOTONIC, &start);
+
   int i;
   double bm = 1.3;
   double bc = 10;
@@ -74,13 +107,51 @@ int main() {
   
   double om[] = {0,1,1, 1, 0,-1,-1,-1};
   double oc[] = {1,1,0,-1,-1,-1, 0, 1};
-
-  be = rms_error(bm, bc);
   
-  struct timespec start, finish;   
-  long long int time_elapsed;
+  double *cuda_dm, *cuda_dc;
+  double *cuda_error_sum;
+  point_t *cuda_data;
 
-  clock_gettime(CLOCK_MONOTONIC, &start);
+  error = cudaMalloc(&cuda_dm, sizeof(double));
+  error = cudaMalloc(&cuda_dc, sizeof(double));
+  error = cudaMalloc(&cuda_error_sum, sizeof(double)*1000);
+  error = cudaMalloc(&cuda_data, sizeof(point_t)*1000);
+
+  if(error) {
+
+  fprintf(stderr, "CudaMalloc returned %d %s\n", error, 
+  cudaGetErrorString(error));
+}
+
+  error = cudaMemcpy(cuda_dm, &bm, sizeof(double), cudaMemcpyHostToDevice);
+  error = cudaMemcpy(cuda_dc, &bc, sizeof(double), cudaMemcpyHostToDevice);
+  error = cudaMemcpy(cuda_data, &data, sizeof(point_t)*1000, cudaMemcpyHostToDevice);
+  if(error){
+  
+  fprintf(stderr, "cudaMemcpya returned %d %s\n", error, cudaGetErrorString(error));
+
+}
+
+
+  dim3 dime(1000,1,1);
+
+  rms_error <<< 1, dime >>> (cuda_dm, cuda_dc, cuda_error_sum, cuda_data);
+  cudaThreadSynchronize();
+
+  error = cudaMemcpy(&bm, cuda_dm, sizeof(double), cudaMemcpyDeviceToHost);
+  error = cudaMemcpy(&bc, cuda_dc, sizeof(double), cudaMemcpyDeviceToHost);
+  error = cudaMemcpy(error_sum, cuda_error_sum, sizeof(double)*1000, cudaMemcpyDeviceToHost);
+  
+  if(error){
+  
+  fprintf(stderr, "cudaMemcpya returned %d %s\n", error, cudaGetErrorString(error));
+
+}
+
+  be = error_mean();
+  printf("minimum m,c is %lf,%lf with error %lf\n", bm, bc, be);
+  
+  
 
   while(!minimum_found) {
     for(i=0;i<8;i++) {
@@ -89,10 +160,25 @@ int main() {
     }
       
     for(i=0;i<8;i++) {
-      e[i] = rms_error(dm[i], dc[i]);
-      if(e[i] < best_error) {
-        best_error = e[i];
-        best_error_i = i;
+       cudaMemcpy(cuda_dm, &dm[i], sizeof(double), cudaMemcpyHostToDevice);
+       cudaMemcpy(cuda_dc, &dc[i], sizeof(double), cudaMemcpyHostToDevice);
+
+      dim3 dime(1000,1,1);
+      rms_error <<< 1, dime >>> (cuda_dm, cuda_dc, cuda_error_sum, cuda_data);
+      cudaThreadSynchronize();
+      
+      error = cudaMemcpy(&dm[i], cuda_dm, sizeof(double), cudaMemcpyDeviceToHost);
+      error = cudaMemcpy(&dc[i], cuda_dc, sizeof(double), cudaMemcpyDeviceToHost);
+      error = cudaMemcpy(&error_sum, cuda_error_sum, sizeof(double)*1000, cudaMemcpyDeviceToHost);
+      
+      e[i] = error_mean();
+      
+      if(e[i] < best_error){
+      best_error = e[i];
+      best_error_i = i;
+
+
+      
       }
     }
 
@@ -106,9 +192,19 @@ int main() {
       minimum_found = 1;
     }
   }
+  
+  error = cudaFree(cuda_dm);
+  error = cudaFree(cuda_dc);
+  error = cudaFree(cuda_error_sum);
+  error = cudaFree(cuda_data);
 
+  if(error){
+  fprintf(stderr, "cudaMemcpya returned %d %s\n", error, cudaGetErrorString(error));
 
-  printf("minimum m,c is %lf,%lf with error %lf\n", bm, bc, be);
+}
+  
+
+ printf("minimum m,c is %lf,%lf with error %lf\n", bm, bc, be);
 
   clock_gettime(CLOCK_MONOTONIC, &finish);
   time_difference(&start, &finish, &time_elapsed);

@@ -22,6 +22,9 @@
     
   To compile adapt the code below wo match your filenames:  
     cc -o ip_coursework_014 ip_coursework_014.c -lglut -lGL -lm 
+
+  To run the program:
+  ./ip_coursework_014
    
   Dr Kevan Buckley, University of Wolverhampton, 2018
 ******************************************************************************/
@@ -116,7 +119,7 @@ int main(int argc, char **argv) {
 
   detect_edges(image, results);
  
-  clock_gettime(CLOCK_MONOTONIC, &finish);
+   clock_gettime(CLOCK_MONOTONIC, &finish);
   time_difference(&start, &finish, &time_elapsed);
   printf("Time elapsed was %lldns or %0.9lfs\n", time_elapsed, 
          (time_elapsed/1.0e9)); 
@@ -133,7 +136,8 @@ int main(int argc, char **argv) {
   glutMainLoop(); 
 
   tidy_and_exit();
-  
+
+ 
   return 0;
 }
 
