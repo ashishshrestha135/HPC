@@ -121,7 +121,6 @@ int main(int argc, char *argv[]){
 
   struct timespec start, finish;
   long long int time_elapsed;   
-  int account = 0;
   clock_gettime(CLOCK_MONOTONIC, &start);
 
  
@@ -137,11 +136,9 @@ int size, rank;
     }
   } else {
     if(rank ==0){
-      int x;
-      int y;
-      int i;
-	MPI_Send(&x, 1, MPI_INT, 1, 0, MPI_COMM_WORLD);  
-      MPI_Send(&y, 1, MPI_INT, 2, 0, MPI_COMM_WORLD);
+      int a,b,i;
+	MPI_Send(&a, 1, MPI_INT, 1, 0, MPI_COMM_WORLD);  
+      MPI_Send(&b, 1, MPI_INT, 2, 0, MPI_COMM_WORLD);
 	
     } else {
       if(rank == 1){

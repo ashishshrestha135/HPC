@@ -68,22 +68,22 @@ printfs.
 
 void crack_block() {
   int i;
-  pthread_t th1, th2;
+  pthread_t thread_1, thread_2;
 
-  void *first_block_crack();
-  void *second_block_crack();
+  void *kernel_function_1();
+  void *kernel_function_2();
   
   for(i=0;i<n_passwords;i<i++) {
-    pthread_create(&th1, NULL, first_block_crack, encrypted_passwords[i] );
-    pthread_create(&th2, NULL, second_block_crack, encrypted_passwords[i]);
+    pthread_create(&thread_1, NULL, kernel_function_1, encrypted_passwords[i] );
+    pthread_create(&thread_2, NULL, kernel_function_2, encrypted_passwords[i]);
   
-  pthread_join(th1, NULL);
-  pthread_join(th2, NULL);
+  pthread_join(thread_1, NULL);
+  pthread_join(thread_2, NULL);
 }
 }
 
 
-void *first_block_crack(char *salt_and_encrypted){
+void *kernel_function_1(char *salt_and_encrypted){
  int x, y, z;     // Loop counters
   char salt[7];    // String used in hashing the password. Need space
   char plain[7];   // The combination of letters currently being checked
@@ -108,7 +108,7 @@ void *first_block_crack(char *salt_and_encrypted){
   }
 }
 
-void *second_block_crack(char *salt_and_encrypted){
+void *kernel_function_2(char *salt_and_encrypted){
 int x, y, z;     // Loop counters
   char salt[7];    // String used in hashing the password. Need space
   char plain[7];   // The combination of letters currently being checked
