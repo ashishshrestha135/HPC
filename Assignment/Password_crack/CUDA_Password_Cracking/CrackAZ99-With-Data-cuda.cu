@@ -24,10 +24,16 @@
 *****************************************************************************/
 
 __device__ int is_a_match(char *attempt) {
-  char plain_password[] = "ML4249";
+  char pwd[] = "ML4249";
+  char pwd1[] = "PE3462";
+  char pwd2[] = "UM4598";
+  char pwd3[] = "GT9859";
   
   char *a = attempt;
-  char *p = plain_password;
+  char *p = pwd;
+  char *q = pwd1;
+  char *r = pwd2;
+  char *s = pwd3;
   
   while(*a == *p) {
     if(*a == '\0') {
@@ -35,7 +41,36 @@ __device__ int is_a_match(char *attempt) {
     }
     a++;
     p++;
+    
   }
+
+  while(*a == *q) {
+    if(*a == '\0') {
+      return 1;
+    }
+    a++;
+    q++;
+    
+  }
+
+  while(*a == *r) {
+    if(*a == '\0') {
+      return 1;
+    }
+    a++;
+    r++;
+    
+  }
+
+  while(*a == *s) {
+    if(*a == '\0') {
+      return 1;
+    }
+    a++;
+    s++;
+    
+  }
+
   return 0;
 }
 
